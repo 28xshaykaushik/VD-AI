@@ -1,0 +1,13 @@
+{
+  "name": "VyoomDut AI",
+  "description": "Intelligent Atmospheric Decision Engine & Conversational Weather AI — Don't Just Know the Weather. Know What to Do.",
+  "requestFramePermissions": [
+    "geolocation",
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
+
