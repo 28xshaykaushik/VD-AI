@@ -508,6 +508,64 @@ app.get("/api/weather", async (req: Request, res: Response) => {
 });
 
 // ----------------------------------------------------
+// 1.1 City Search Auto-complete Endpoint
+// ----------------------------------------------------
+app.get("/api/cities", async (req: Request, res: Response) => {
+  try {
+    const query = ((req.query.q as string) || "").trim();
+    if (!query || query.length < 2) {
+      return res.json({ results: [] });
+    }
+
+    // First, check matching local popular locations for instant sub-millisecond response
+    const normalizedQ = query.toLowerCase();
+    const localMatches = Object.values(POPULAR_LOCATIONS)
+      .filter((loc) => loc.name.toLowerCase().includes(normalizedQ) || loc.admin.toLowerCase().includes(normalizedQ))
+      .map((loc) => ({
+        name: loc.name,
+        admin1: loc.admin,
+        country: loc.country,
+        latitude: loc.lat,
+        longitude: loc.lon,
+      }));
+
+    // Next, query Open-Meteo Geocoding API for global results
+    try {
+      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=7&language=en&format=json`;
+      const geoResp = await fetch(geoUrl);
+      const geoData = await geoResp.json();
+      
+      const remoteResults = (geoData?.results || []).map((r: any) => ({
+        name: r.name,
+        admin1: r.admin1 || "",
+        country: r.country || "",
+        latitude: r.latitude,
+        longitude: r.longitude,
+      }));
+
+      // Merge and deduplicate by name + admin1 + country
+      const combined: any[] = [];
+      const seen = new Set<string>();
+
+      for (const item of [...localMatches, ...remoteResults]) {
+        const key = `${item.name}-${item.admin1}-${item.country}`.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          combined.push(item);
+        }
+      }
+
+      res.json({ results: combined.slice(0, 7) });
+    } catch {
+      res.json({ results: localMatches });
+    }
+  } catch (err: any) {
+    console.error("Error in /api/cities:", err);
+    res.json({ results: [] });
+  }
+});
+
+// ----------------------------------------------------
 // 2. Weather Mission Mode Evaluation Endpoint
 // ----------------------------------------------------
 app.post("/api/mission", async (req: Request, res: Response) => {
@@ -672,34 +730,167 @@ Do NOT wrap in markdown code blocks with extra text. Return pure JSON only.`;
   }
 });
 
+// Helper: Extract candidate city or location from user query
+function extractCityCandidate(query: string): string | null {
+  const q = query.trim().replace(/[?!.,;]/g, " ");
+
+  // Pattern 1: (temperature|temp|weather|mausam|forecast) ... (in|of|for|at|near|around|about|ka|ki|ke) <city>
+  let match = q.match(/(?:temperature|temeratue|temp|weather|mausam|forecast|climate|condition|conditions|barish|chata|rain|info|information)\s+(?:in|of|for|at|near|around|about|ka|ki|ke)\s+([a-zA-Z\s]+)/i);
+  if (match) return cleanCandidate(match[1]);
+
+  // Pattern 2: "what about <city>" or "how is <city>" or "tell me about <city>"
+  match = q.match(/(?:about|how is|tell me about|weather of|temperature of)\s+([a-zA-Z\s]+)/i);
+  if (match) return cleanCandidate(match[1]);
+
+  // Pattern 3: <city> (temperature|weather|mausam)
+  match = q.match(/^([a-zA-Z\s]+?)\s+(?:ka\s+)?(?:temperature|temeratue|temp|weather|mausam|forecast)/i);
+  if (match && !/^(current|live|today|tomorrow|local|city|the|what|whats|is|how)$/i.test(match[1].trim())) {
+    return cleanCandidate(match[1]);
+  }
+
+  // Pattern 4: (in|at|for|near) <city>
+  match = q.match(/(?:in|at|for|near|around)\s+([a-zA-Z\s]+)/i);
+  if (match) {
+    const res = cleanCandidate(match[1]);
+    if (res && !/^(today|tomorrow|now|me|us|riding|walking|travel|office|college|school|bike|car|drive|night|morning|evening|afternoon)$/i.test(res)) {
+      return res;
+    }
+  }
+
+  // Pattern 5: if query is a short 1-2 words that might just be a city name
+  const words = q.split(/\s+/).filter(Boolean);
+  if (words.length <= 2 && !/^(hi|hello|hey|help|yes|no|ok|bye|umbrella|chata|rain|aqi|mask)$/i.test(words[0])) {
+    return cleanCandidate(q);
+  }
+
+  return null;
+}
+
+function cleanCandidate(cand: string): string {
+  let cleaned = cand.replace(/^(the|a|an|about|to|any|other|place|city|location)\s+/i, "");
+  cleaned = cleaned.replace(/\s+(today|tomorrow|now|right now|please|plz|or|and|about|kya|hai|batao|h|bhi|in|on|at).*$/i, "").trim();
+  return cleaned;
+}
+
+// Helper: Fetch quick live weather for any resolved location
+async function fetchLiveWeatherSummary(cityName: string): Promise<any | null> {
+  try {
+    const clean = cityName.trim();
+    if (!clean || clean.length < 2) return null;
+    let lat: number | undefined;
+    let lon: number | undefined;
+    let resolvedName = clean;
+    let country = "India";
+    let admin = "";
+    let isHilly = false;
+
+    const normalizedKey = clean.toLowerCase().replace(/[^a-z]/g, "");
+    if (POPULAR_LOCATIONS[normalizedKey]) {
+      const match = POPULAR_LOCATIONS[normalizedKey];
+      lat = match.lat;
+      lon = match.lon;
+      resolvedName = match.name;
+      country = match.country;
+      admin = match.admin;
+      isHilly = !!match.isMountainous;
+    } else {
+      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(clean)}&count=1&language=en&format=json`;
+      const geoResp = await fetch(geoUrl);
+      const geoData = await geoResp.json();
+      if (geoData?.results && geoData.results.length > 0) {
+        const top = geoData.results[0];
+        lat = top.latitude;
+        lon = top.longitude;
+        resolvedName = top.name;
+        country = top.country || "India";
+        admin = top.admin1 || "";
+        if (top.elevation && top.elevation > 1200) {
+          isHilly = true;
+        }
+      }
+    }
+
+    if (lat === undefined || lon === undefined) return null;
+
+    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&timezone=auto`;
+    const weatherResp = await fetch(weatherUrl);
+    const weatherJson = await weatherResp.json();
+    const current = weatherJson.current || {};
+    const weatherCode = current.weather_code ?? 0;
+    const weatherInfo = getWeatherInfo(weatherCode);
+
+    const temp = Math.round(current.temperature_2m ?? 25);
+    const feelsLike = Math.round(current.apparent_temperature ?? temp);
+    const humidity = Math.round(current.relative_humidity_2m ?? 50);
+    const windSpeed = Math.round(current.wind_speed_10m ?? 10);
+    const precip = current.precipitation ?? 0;
+
+    return {
+      location: {
+        name: resolvedName,
+        country,
+        admin,
+        lat,
+        lon,
+        isMountainous: isHilly,
+      },
+      current: {
+        temp,
+        feelsLike,
+        humidity,
+        windSpeed,
+        condition: weatherInfo.label,
+        precipitation: precip,
+        hazard: weatherInfo.hazard,
+        aqi: Math.min(300, Math.max(35, Math.round(65 + (temp > 32 ? 35 : 10) + (humidity > 70 ? 20 : 0)))),
+      },
+    };
+  } catch (e) {
+    console.warn("fetchLiveWeatherSummary failed for:", cityName, e);
+    return null;
+  }
+}
+
 // Deterministic Meteorological Decision Rule Engine (Zero-Failure Fallback)
 function generateLocalWeatherDecision(userMsg: string, weatherContext: any, lang: string): string {
   const loc = weatherContext?.location?.name || "your location";
+  const adminState = weatherContext?.location?.admin ? `, ${weatherContext.location.admin}` : "";
   const temp = weatherContext?.current?.temp ?? 28;
+  const feelsLike = weatherContext?.current?.feelsLike ?? temp;
   const cond = weatherContext?.current?.condition ?? "clear skies";
   const rain = weatherContext?.current?.precipitation ?? 0;
   const wind = weatherContext?.current?.windSpeed ?? 15;
+  const humidity = weatherContext?.current?.humidity ?? 55;
   const aqi = weatherContext?.current?.aqi ?? 95;
   const isHilly = weatherContext?.location?.isMountainous || false;
   const isRainy = rain > 0 || /rain|drizzle|shower|thunder/i.test(cond);
 
   const query = userMsg.toLowerCase();
-  const isHindi = /hindi/i.test(lang) || /kya|hai|hoon|batao|kaise|mausam|chata|barish|kapde|bike|niklun/i.test(query);
+  const isHindi = /hindi/i.test(lang) || /kya|hai|hoon|batao|kaise|mausam|chata|barish|kapde|bike|niklun|kitna/i.test(query);
 
-  // 1. Umbrella / Rain Question
-  if (/umbrella|chata|rain|barish|drizzle|barsat|waterproof|wet/i.test(query)) {
+  // 1. Direct Temperature & Conditions Query
+  if (/temperature|temeratue|temp|kitna hai|how hot|how cold|degrees|celsius/i.test(query)) {
     if (isHindi) {
-      return isRainy
-        ? `☔ **हाँ, छाता (Umbrella) अवश्य साथ रखें!**\n\n- **स्थिति:** ${loc} में अभी बारिश/बूंदाबांदी (${rain} mm) और बादल छाए हुए हैं।\n- **सलाह:** यदि आप पैदल या 2-व्हीलर से निकल रहे हैं, तो वॉटरप्रूफ बैग कवर और छाता पास रखें।\n- **सावधानी:** फिसलन भरी सड़कों और जलभराव वाले रास्तों से बचें।`
-        : `☂️ **अभी छाते की तत्काल आवश्यकता नहीं है, पर साथ रखना सुरक्षित रहेगा।**\n\n- **स्थिति:** ${loc} में वर्तमान तापमान **${temp}°C** है और आसमान **${cond}** है।\n- **सलाह:** यदि आप दिनभर बाहर रहने वाले हैं, तो अचानक मौसम बदलाव के लिए एक फोल्डेबल छाता बैग में डाल लें।`;
+      return `🌡️ **${loc}${adminState} का वर्तमान तापमान एवं मौसम:**\n\n- **वर्तमान तापमान:** **${temp}°C** (महसूस: ~${feelsLike}°C)\n- **मौसम की स्थिति:** ${cond}\n- **हवा व नमी:** हवा की गति ${wind} km/h, आर्द्रता (Humidity) ${humidity}%\n- **वायु गुणवत्ता (AQI):** ${aqi} (${aqi > 150 ? "मध्यम/खराब" : "सामान्य"})\n\n💡 **निर्णय सलाह:** ${temp > 32 ? "धूप व गर्मी से बचने के लिए हाइड्रेटेड रहें।" : temp < 18 ? "हल्की ठंडक है, फुल-स्लीव या जैकेट पहनें।" : "मौसम सुहावना है और यात्रा या आउटडोर गतिविधियों के लिए अनुकूल है।"}`;
     } else {
-      return isRainy
-        ? `☔ **YES, carry an umbrella!**\n\n- **Current Ground Truth:** Active precipitation (${rain} mm) and ${cond} observed in ${loc}.\n- **Direct Action:** Carry a sturdy umbrella and wrap electronic devices in waterproof pouches.\n- **Commute Notice:** Pavements are slick; allow an extra 10–15 minutes for road travel.`
-        : `☂️ **Umbrella is optional right now, but recommended for extended outings.**\n\n- **Current Ground Truth:** ${loc} is currently **${temp}°C** with **${cond}**.\n- **Action:** Rain probability is moderate. A compact travel umbrella in your backpack guarantees protection if unexpected showers develop.`;
+      return `🌡️ **Live Temperature & Atmospheric Status for ${loc}${adminState}:**\n\n- **Current Temperature:** **${temp}°C** (Feels like ~${feelsLike}°C)\n- **Weather Condition:** ${cond}\n- **Wind & Moisture:** Wind ${wind} km/h, Humidity ${humidity}%\n- **Air Quality (AQI):** ${aqi}\n\n💡 **Actionable Advice:** ${temp > 32 ? "Warm conditions; stay hydrated with water and avoid prolonged sun exposure." : temp < 18 ? "Mildly chilly; light layer or jacket recommended." : "Comfortable ambient weather suitable for outdoor commute and travel."}`;
     }
   }
 
-  // 2. Bike / Two-wheeler Commute
+  // 2. Umbrella / Rain Question
+  if (/umbrella|chata|rain|barish|drizzle|barsat|waterproof|wet/i.test(query)) {
+    if (isHindi) {
+      return isRainy
+        ? `☔ **हाँ, ${loc} के लिए छाता (Umbrella) अवश्य साथ रखें!**\n\n- **स्थिति:** ${loc} में अभी बारिश/बूंदाबांदी (${rain} mm) और बादल छाए हुए हैं।\n- **सलाह:** यदि आप पैदल या 2-व्हीलर से निकल रहे हैं, तो वॉटरप्रूफ बैग कवर और छाता पास रखें।\n- **सावधानी:** फिसलन भरी सड़कों और जलभराव वाले रास्तों से बचें।`
+        : `☂️ **अभी ${loc} में छाते की तत्काल आवश्यकता नहीं है, पर साथ रखना सुरक्षित रहेगा।**\n\n- **स्थिति:** ${loc} में वर्तमान तापमान **${temp}°C** है और आसमान **${cond}** है।\n- **सलाह:** यदि आप दिनभर बाहर रहने वाले हैं, तो अचानक मौसम बदलाव के लिए एक फोल्डेबल छाता बैग में डाल लें।`;
+    } else {
+      return isRainy
+        ? `☔ **YES, carry an umbrella in ${loc}!**\n\n- **Current Ground Truth:** Active precipitation (${rain} mm) and ${cond} observed in ${loc}.\n- **Direct Action:** Carry a sturdy umbrella and wrap electronic devices in waterproof pouches.\n- **Commute Notice:** Pavements are slick; allow an extra 10–15 minutes for road travel.`
+        : `☂️ **Umbrella is optional right now in ${loc}, but recommended for extended outings.**\n\n- **Current Ground Truth:** ${loc} is currently **${temp}°C** with **${cond}**.\n- **Action:** Rain probability is moderate. A compact travel umbrella in your backpack guarantees protection if unexpected showers develop.`;
+    }
+  }
+
+  // 3. Bike / Two-wheeler Commute
   if (/bike|motorcycle|scooter|two-wheeler|traffic|drive|car|cycle/i.test(query)) {
     if (isHindi) {
       return `🏍️ **${loc} में टू-व्हीलर / बाइक राइडिंग एडवाइजरी:**\n\n- **तापमान व हवा:** ${temp}°C, हवा की गति ${wind} km/h।\n- **सड़क सुरक्षा:** ${isRainy ? "⚠️ गीली सड़कों पर 2x ब्रेकिंग दूरी बनाए रखें और सफेद रोड मार्किंग्स पर ब्रेक लगाने से बचें।" : "✅ सड़कें सूखी हैं, सामान्य राइडिंग सुरक्षित है।"}\n- **एयर क्वालिटी:** AQI ${aqi} है — ${aqi > 150 ? "राइडिंग के दौरान प्रदूषण और धूल से बचने के लिए N95 मास्क पहनें।" : "हवा सामान्य है।"}\n- **हेलमेट एडवाइजरी:** क्लियर वाइज़र का प्रयोग करें।`;
@@ -708,16 +899,16 @@ function generateLocalWeatherDecision(userMsg: string, weatherContext: any, lang
     }
   }
 
-  // 3. Clothing / Outfit Advice
+  // 4. Clothing / Outfit Advice
   if (/wear|clothes|outfit|kapde|pehnun|shoes|jacket|fashion/i.test(query)) {
     if (isHindi) {
       return `👕 **आज क्या पहनें (${loc} के मौसम अनुसार):**\n\n- **मौसम का हाल:** ${temp}°C (${cond})।\n- **पहने:** ${temp > 30 ? "हल्के कॉटन या लिनेन के ढीले कपड़े और धूप से बचाव हेतु सनग्लासेस।" : temp < 18 ? "हल्की जैकेट या फुल-स्लीव स्वेटशर्ट।" : "आरामदायक कैजुअल कॉटन कपड़े।"}\n- **जूते:** ${isRainy ? "कैनवास या स्वेड के जूते न पहनें, वॉटर-रेसिस्टेंट स्नीकर्स पहनें।" : "सामान्य आरामदायक जूते।"}\n- **हेल्थ टिप:** यदि धूप तेज हो तो सनस्क्रीन अवश्य लगाएं।`;
     } else {
-      return `👕 **Smart Outfit Recommendation for ${loc}:**\n\n- **Atmospheric Feel:** ${temp}°C (${cond}, Humidity ${weatherContext?.current?.humidity || 50}%).\n- **Recommended Wear:** ${temp > 30 ? "Breathable cotton or moisture-wicking linen fabrics with UV sunglasses." : temp < 18 ? "Layer with a light windbreaker or thermal sweatshirt." : "Light casual layering (t-shirt + breathable chinos/jeans)."}\n- **Footwear:** ${isRainy ? "Avoid white canvas or suede; wear synthetic water-resistant shoes with rubber tread." : "Comfortable walking sneakers."}`;
+      return `👕 **Smart Outfit Recommendation for ${loc}:**\n\n- **Atmospheric Feel:** ${temp}°C (${cond}, Humidity ${humidity}%).\n- **Recommended Wear:** ${temp > 30 ? "Breathable cotton or moisture-wicking linen fabrics with UV sunglasses." : temp < 18 ? "Layer with a light windbreaker or thermal sweatshirt." : "Light casual layering (t-shirt + breathable chinos/jeans)."}\n- **Footwear:** ${isRainy ? "Avoid white canvas or suede; wear synthetic water-resistant shoes with rubber tread." : "Comfortable walking sneakers."}`;
     }
   }
 
-  // 4. Departure Time / Timing
+  // 5. Departure Time / Timing
   if (/kab niklun|timing|departure|best time|when to leave|schedule|time/i.test(query)) {
     if (isHindi) {
       return `🕒 **घर से निकलने का सर्वश्रेष्ठ समय (${loc}):**\n\n- **सुझावित प्रस्थान:** अगले 30-45 मिनटों में निकलना सबसे अनुकूल है।\n- **संभावित बाधा:** शाम के समय तापमान में गिरावट और ट्रैफिक सघनता बढ़ सकती है।\n- **त्वरित चेकलिस्ट:** फोन चार्ज रखें, पानी की बोतल साथ लें और निकलने से पहले लाइव रडार चेक करें।`;
@@ -726,29 +917,29 @@ function generateLocalWeatherDecision(userMsg: string, weatherContext: any, lang
     }
   }
 
-  // 5. Hills / Shimla / Manali / Mountains
+  // 6. Hills / Shimla / Manali / Mountains
   if (/shimla|manali|hills|pahad|mountain|landslide|kufri|gangtok/i.test(query) || isHilly) {
     if (isHindi) {
-      return `🏔️ **पहाड़ी क्षेत्र / पर्वतीय यात्रा चेतावनी:**\n\n- **क्षेत्रीय जोखिम:** पहाड़ी मोड़ों पर कोहरा, फिसलन और ढलान अस्थिरता (Landslide risk) का ध्यान रखें।\n- **ड्राइविंग टिप्स:** भारी बारिश के दौरान घाटी के किनारों और ढीली चट्टानों वाले हिस्सों में रुकने से बचें।\n- **जरूरी सामान:** गर्म कपड़े, टॉर्च, पावर बैंक और फर्स्ट-एड किट साथ रखें।`;
+      return `🏔️ **${loc} पर्वतीय यात्रा चेतावनी:**\n\n- **क्षेत्रीय जोखिम:** पहाड़ी मोड़ों पर कोहरा, फिसलन और ढलान अस्थिरता (Landslide risk) का ध्यान रखें।\n- **ड्राइविंग टिप्स:** भारी बारिश के दौरान घाटी के किनारों और ढीली चट्टानों वाले हिस्सों में रुकने से बचें।\n- **जरूरी सामान:** गर्म कपड़े, टॉर्च, पावर बैंक और फर्स्ट-एड किट साथ रखें।`;
     } else {
-      return `🏔️ **Mountain & Hill Corridor Alert:**\n\n- **Slope Stability:** Mountain corridors are sensitive to saturation and fog.\n- **Driving Caution:** Maintain low gears on downhill hairpins, avoid sudden braking, and do not park directly below steep, unreinforced rock slopes.\n- **Emergency Pack:** Keep thermal insulation layers, a flashlight, high-capacity power bank, and emergency rations.`;
+      return `🏔️ **Mountain & Hill Corridor Alert for ${loc}:**\n\n- **Slope Stability:** Mountain corridors are sensitive to saturation and fog.\n- **Driving Caution:** Maintain low gears on downhill hairpins, avoid sudden braking, and do not park directly below steep, unreinforced rock slopes.\n- **Emergency Pack:** Keep thermal insulation layers, a flashlight, high-capacity power bank, and emergency rations.`;
     }
   }
 
-  // 6. Air Quality & Health
+  // 7. Air Quality & Health
   if (/aqi|mask|pollution|hawa|pradushan|asthma|breathe/i.test(query)) {
     if (isHindi) {
-      return `😷 **वायु गुणवत्ता (AQI) व स्वास्थ्य सुरक्षा रिपोर्ट:**\n\n- **वर्तमान AQI:** ${aqi} (PM2.5: ${weatherContext?.current?.pm25 || 60} µg/m³)\n- **स्थिति:** ${aqi > 200 ? "खराब / अस्वस्थ वायु" : aqi > 100 ? "मध्यम वायु" : "अच्छी वायु"}\n- **सलाह:** ${aqi > 150 ? "सड़क पर चलते समय N95 रेस्पिरेटर मास्क अनिवार्य रूप से लगाएं। बच्चों और बुजुर्गों को भारी आउटडोर व्यायाम से बचना चाहिए।" : "हवा सामान्य है, मास्क वैकल्पिक है।"}`;
+      return `😷 **वायु गुणवत्ता (AQI) व स्वास्थ्य सुरक्षा रिपोर्ट (${loc}):**\n\n- **वर्तमान AQI:** ${aqi}\n- **स्थिति:** ${aqi > 200 ? "खराब / अस्वस्थ वायु" : aqi > 100 ? "मध्यम वायु" : "अच्छी वायु"}\n- **सलाह:** ${aqi > 150 ? "सड़क पर चलते समय N95 रेस्पिरेटर मास्क अनिवार्य रूप से लगाएं।" : "हवा सामान्य है, मास्क वैकल्पिक है।"}`;
     } else {
-      return `😷 **Air Quality Index (AQI) & Respiratory Health Advisory:**\n\n- **Current AQI:** ${aqi} in ${loc} (PM2.5: ${weatherContext?.current?.pm25 || 55} µg/m³).\n- **Impact:** ${aqi > 200 ? "Unhealthy. High concentrations of particulate matter irritate lungs and eyes." : aqi > 100 ? "Moderate exposure. Sensitive groups may experience respiratory irritation." : "Satisfactory air conditions."}\n- **Action:** ${aqi > 150 ? "Equip an N95/N99 respirator during outdoor transit. Run indoor air filtration." : "Standard outdoor activities are safe without respiratory restrictions."}`;
+      return `😷 **Air Quality Index (AQI) & Respiratory Health Advisory for ${loc}:**\n\n- **Current AQI:** ${aqi} in ${loc}.\n- **Impact:** ${aqi > 200 ? "Unhealthy. High concentrations of particulate matter irritate lungs and eyes." : aqi > 100 ? "Moderate exposure. Sensitive groups may experience respiratory irritation." : "Satisfactory air conditions."}\n- **Action:** ${aqi > 150 ? "Equip an N95/N99 respirator during outdoor transit." : "Standard outdoor activities are safe without respiratory restrictions."}`;
     }
   }
 
   // Default Comprehensive Decision Synthesis
   if (isHindi) {
-    return `🌤️ **व्योमदूत AI — ${loc} निर्णय विश्लेषण:**\n\n- **वर्तमान स्थिति:** तापमान **${temp}°C**, स्थिति **${cond}**, हवा **${wind} km/h**, वायु गुणवत्ता **AQI ${aqi}**।\n- **क्या साथ रखें (Carry):** ${isRainy ? "छाता, वॉटरप्रूफ बैग कवर, रेनकोट।" : "पानी की बोतल, सनग्लासेस, हल्का रूमाल।"}\n- **क्या न करें (Avoid):** ${isRainy ? "सफेद कैनवास जूते और जलभराव वाले रास्ते।" : "बिना पानी पिए लंबे समय तक धूप में रहना।"}\n- **मुख्य संदेश:** "मौसम सिर्फ जानिए नहीं — उसके हिसाब से फैसला लीजिए!" क्या आप किसी खास काम (जैसे बाइक राइड, पिकनिक, या यात्रा) के लिए सलाह चाहते हैं?`;
+    return `🌤️ **व्योमदूत AI — ${loc}${adminState} निर्णय विश्लेषण:**\n\n- **वर्तमान स्थिति:** तापमान **${temp}°C**, स्थिति **${cond}**, हवा **${wind} km/h**, वायु गुणवत्ता **AQI ${aqi}**।\n- **क्या साथ रखें (Carry):** ${isRainy ? "छाता, वॉटरप्रूफ बैग कवर, रेनकोट।" : "पानी की बोतल, सनग्लासेस, हल्का रूमाल।"}\n- **क्या न करें (Avoid):** ${isRainy ? "सफेद कैनवास जूते और जलभराव वाले रास्ते।" : "बिना पानी पिए लंबे समय तक धूप में रहना।"}\n- **मुख्य संदेश:** "मौसम सिर्फ जानिए नहीं — उसके हिसाब से फैसला लीजिए!" क्या आप किसी खास काम (जैसे बाइक राइड, पिकनिक, या यात्रा) के लिए सलाह चाहते हैं?`;
   } else {
-    return `🌤️ **VyoomDut AI — Atmospheric Decision Brief for ${loc}:**\n\n- **Live Ground Truth:** **${temp}°C**, **${cond}**, Wind **${wind} km/h**, AQI **${aqi}**.\n- **What to Carry:** ${isRainy ? "Sturdy umbrella, waterproof pouch for electronics, light rain layer." : "Hydration flask, sunglasses, and standard daily essentials."}\n- **What to Avoid:** ${isRainy ? "Suede/canvas footwear and low-lying waterlogged roads." : "Extended stationary sun exposure without hydration."}\n- **Decision Mandate:** *"Don't Just Know the Weather. Know What to Do."*\n\nWould you like specific advice for a planned activity (e.g., commute, outdoor sports, or travel)?`;
+    return `🌤️ **VyoomDut AI — Atmospheric Decision Brief for ${loc}${adminState}:**\n\n- **Live Ground Truth:** **${temp}°C**, **${cond}**, Wind **${wind} km/h**, AQI **${aqi}**.\n- **What to Carry:** ${isRainy ? "Sturdy umbrella, waterproof pouch for electronics, light rain layer." : "Hydration flask, sunglasses, and standard daily essentials."}\n- **What to Avoid:** ${isRainy ? "Suede/canvas footwear and low-lying waterlogged roads." : "Extended stationary sun exposure without hydration."}\n- **Decision Mandate:** *"Don't Just Know the Weather. Know What to Do."*\n\nWould you like specific advice for a planned activity (e.g., commute, outdoor sports, or travel)?`;
   }
 }
 
@@ -761,61 +952,103 @@ app.post("/api/chat", async (req: Request, res: Response) => {
     const userMsg = (message || "").trim();
     const lang = language || "English";
 
-    const ai = getAI();
-    if (ai) {
-      try {
-        const systemPrompt = `You are VyoomDut AI, the premier Conversational AI Weather Decision Assistant.
-Your core philosophy:
-- Traditional weather apps only say: "Delhi: 32°C, Rain 70%".
-- VyoomDut AI says: "Don't Just Know the Weather. Know What to Do!" (Mausam sirf jaaniye nahi — uske hisaab se faisla lijiye).
-- Provide practical, direct behavioral advice: what to carry, what NOT to carry, best departure times, route safety, clothing advice, vehicle tips, and disaster risk awareness.
-- STRICT LANGUAGE REQUIREMENT: The user has selected the language "${lang}". You MUST respond completely in ${lang} using its proper native script (e.g., if Bengali use বাংলা, if Tamil use தமிழ், if Telugu use తెలుగు, if Hindi use हिन्दी, if Marathi use मराठी, if Gujarati use ગુજરાતી, if Punjabi use ਪੰਜਾਬੀ, if Urdu use اردو, if Odia use ଓଡ଼ିଆ, if Assamese use অসমীয়া, if Kannada use ಕನ್ನಡ, if Malayalam use മലയാളം). If Hinglish is chosen, respond in natural conversational Hinglish in Latin script.
-- Always ground decisions in the structured weather context provided below.
+    // 1. Detect if the user is asking about a specific city or location
+    let targetContext = weatherContext;
+    let queriedCityName: string | null = null;
 
-CURRENT REAL-TIME WEATHER CONTEXT:
-${JSON.stringify(weatherContext, null, 2)}
-
-Answer with warmth, crisp structuring (bullet points, emojis for carry/avoid, time badges), and definitive decision-making advice!`;
-
-        // Assemble multi-turn conversation
-        const contents: any[] = [];
-        if (Array.isArray(history) && history.length > 0) {
-          for (const item of history.slice(-6)) {
-            contents.push({
-              role: item.sender === "user" ? "user" : "model",
-              parts: [{ text: item.text }],
-            });
-          }
-        }
-        contents.push({
-          role: "user",
-          parts: [{ text: userMsg || "What should I do right now based on the current weather?" }],
-        });
-
-        const response = await ai.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents,
-          config: {
-            systemInstruction: systemPrompt,
-          },
-        });
-
-        if (response.text) {
-          return res.json({ reply: response.text });
-        }
-      } catch (geminiError) {
-        console.warn("Gemini chat error, seamlessly activating local decision engine:", geminiError);
+    const candidateCity = extractCityCandidate(userMsg);
+    if (candidateCity) {
+      const liveData = await fetchLiveWeatherSummary(candidateCity);
+      if (liveData) {
+        targetContext = liveData;
+        queriedCityName = liveData.location.name;
       }
     }
 
-    // Zero-Failure Local Meteorological Reasoning Engine
-    const intelligentFallback = generateLocalWeatherDecision(userMsg, weatherContext, lang);
-    res.json({ reply: intelligentFallback });
+    const locName = targetContext?.location?.name || "your location";
+    const locAdmin = targetContext?.location?.admin ? `, ${targetContext.location.admin}` : "";
+    const locCountry = targetContext?.location?.country || "";
+
+    const ai = getAI();
+    if (ai) {
+      // Try gemini-3.1-flash-lite first (reliable quota), then gemini-3.8-flash
+      const candidateModels = ["gemini-3.1-flash-lite", "gemini-3.8-flash"];
+
+      const systemPrompt = `You are VyoomDut AI, an intelligent, ultra-helpful, versatile conversational AI assistant with premier meteorological intelligence and decision-making expertise.
+
+CRITICAL INSTRUCTIONS ON SCOPE & LOCATION:
+1. USER INQUIRY TARGET LOCATION: The user is inquiring about "${locName}${locAdmin} (${locCountry})".
+   LIVE GROUND-TRUTH SENSOR DATA FOR ${locName.toUpperCase()}:
+   - Temperature: ${targetContext?.current?.temp ?? 26}°C (Feels like: ${targetContext?.current?.feelsLike ?? 26}°C)
+   - Weather Condition: ${targetContext?.current?.condition ?? "Clear"}
+   - Precipitation: ${targetContext?.current?.precipitation ?? 0} mm
+   - Wind Speed: ${targetContext?.current?.windSpeed ?? 12} km/h
+   - Relative Humidity: ${targetContext?.current?.humidity ?? 55}%
+   - Air Quality (AQI): ${targetContext?.current?.aqi ?? 85}
+
+2. DIRECT ANSWER: If the user asked about ${locName} (or any other place), you MUST answer specifically about ${locName}. DO NOT revert or default to Delhi or any other place unless the user specifically asked for Delhi.
+3. GENERAL QUERIES & UNRESTRICTED FREEDOM: If the user asks general knowledge, travel planning, science, programming, math, life advice, or anything under the sun, answer whatever they ask enthusiastically and thoroughly!
+4. DECISION-MAKING SPIRIT: Whenever advising on weather, travel, trips, or daily activities, uphold VyoomDut's motto: "Don't Just Know the Weather. Know What to Do!" Give clear, actionable advice (what to pack, carry, wear, timing, and safety).
+5. STRICT LANGUAGE REQUIREMENT: The user has selected "${lang}". You MUST respond completely in ${lang} using its proper native script (e.g., if Bengali use বাংলা, if Tamil use தமிழ், if Telugu use తెలుగు, if Hindi use हिन्दी, if Marathi use मराठी, if Gujarati use ગુજરાતી, if Punjabi use ਪੰਜਾਬੀ, if Urdu use اردو, if Odia use ଓଡ଼ିଆ, if Assamese use অসমীया, if Kannada use ಕನ್ನಡ, if Malayalam use മലയാളം). If Hinglish is chosen, respond in natural conversational Hinglish in Latin script.
+6. FORMATTING: Structure your response cleanly with bullet points, bold key terms, and helpful emojis where appropriate.`;
+
+      // Assemble multi-turn conversation
+      const contents: any[] = [];
+      if (Array.isArray(history) && history.length > 0) {
+        for (const item of history.slice(-6)) {
+          contents.push({
+            role: item.sender === "user" ? "user" : "model",
+            parts: [{ text: item.text }],
+          });
+        }
+      }
+      contents.push({
+        role: "user",
+        parts: [{ text: userMsg || "What should I do right now based on the current weather?" }],
+      });
+
+      for (const model of candidateModels) {
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents,
+            config: {
+              systemInstruction: systemPrompt,
+            },
+          });
+
+          if (response.text) {
+            return res.json({
+              reply: response.text,
+              targetCity: queriedCityName,
+              isDifferentCity: Boolean(
+                queriedCityName &&
+                weatherContext?.location?.name &&
+                queriedCityName.toLowerCase() !== weatherContext.location.name.toLowerCase()
+              ),
+            });
+          }
+        } catch (geminiError: any) {
+          console.warn(`Gemini model ${model} error:`, geminiError?.message?.slice(0, 120));
+        }
+      }
+    }
+
+    // Zero-Failure Local Meteorological Reasoning Engine with queried location live context
+    const intelligentFallback = generateLocalWeatherDecision(userMsg, targetContext, lang);
+    res.json({
+      reply: intelligentFallback,
+      targetCity: queriedCityName,
+      isDifferentCity: Boolean(
+        queriedCityName &&
+        weatherContext?.location?.name &&
+        queriedCityName.toLowerCase() !== weatherContext.location.name.toLowerCase()
+      ),
+    });
   } catch (err: any) {
     console.error("Error in /api/chat:", err);
-    // Even in error, return a friendly, accurate weather decision instead of 500
     res.json({
-      reply: `🌤️ **VyoomDut AI:** Based on live observations in ${req.body?.weatherContext?.location?.name || "your city"} (${req.body?.weatherContext?.current?.temp || 28}°C, ${req.body?.weatherContext?.current?.condition || "clear skies"}), we recommend keeping a water bottle and checking rain radar before long transit. How can I assist your plans?`,
+      reply: `🌤️ **VyoomDut AI:** Hello! I am ready to help you with real-time weather information and travel decisions for any city worldwide. Please ask me your question!`,
     });
   }
 });

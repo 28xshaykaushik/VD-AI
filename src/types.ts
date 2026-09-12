@@ -189,6 +189,7 @@ export interface ChatMessage {
   sender: "user" | "bot";
   text: string;
   timestamp: string;
+  targetCity?: string;
 }
 
 export interface EventSimulationConfig {

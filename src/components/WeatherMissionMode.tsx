@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { 
-  Sparkles, CheckCircle2, XCircle, Clock, ShieldCheck, 
-  Bike, Car, Footprints, Mountain, Tent, Camera, Trophy, PartyPopper, Briefcase, GraduationCap, Plane,
+  Sparkles, CheckCircle2, Clock, ShieldCheck, 
+  Bike, Car, Footprints, Briefcase, GraduationCap, Plane,
   AlertTriangle, ArrowRight, RefreshCw, Shirt, HelpCircle
 } from "lucide-react";
 import { WeatherData, MissionResult } from "../types";
@@ -13,17 +13,12 @@ interface WeatherMissionModeProps {
 }
 
 const ACTIVITIES = [
-  { id: "Bike ride", label: "Bike Ride", icon: Bike, desc: "High road-friction & wind exposure" },
+  { id: "Office", label: "Office Commute", icon: Briefcase, desc: "Transit & device protection" },
+  { id: "Bike ride", label: "Bike / 2-Wheeler", icon: Bike, desc: "Road grip & wind exposure" },
+  { id: "Driving", label: "Driving / Cab", icon: Car, desc: "Highway spray & visibility" },
   { id: "Walking", label: "Walking / Jog", icon: Footprints, desc: "Direct precipitation exposure" },
-  { id: "Driving", label: "Driving", icon: Car, desc: "Visibility & highway spray conditions" },
-  { id: "Trekking", label: "Trekking / Hike", icon: Mountain, desc: "Slope stability & sudden storms" },
-  { id: "Picnic", label: "Picnic / Park", icon: Tent, desc: "Ground dampness & UV radiation" },
-  { id: "Outdoor sports", label: "Outdoor Sports", icon: Trophy, desc: "Heat index & turf traction" },
-  { id: "Event", label: "Outdoor Party / Event", icon: PartyPopper, desc: "Setup durability & guest comfort" },
-  { id: "Photography", label: "Photography", icon: Camera, desc: "Golden hour & lens moisture protection" },
-  { id: "Office", label: "Office Commute", icon: Briefcase, desc: "Document & laptop waterproofing" },
-  { id: "College", label: "College / School", icon: GraduationCap, desc: "Bicycle / bus transit safety" },
-  { id: "Travel", label: "Multi-day Travel", icon: Plane, desc: "Luggage packing & route variance" },
+  { id: "College", label: "College / School", icon: GraduationCap, desc: "Daily transit & routine" },
+  { id: "Travel", label: "Outstation Travel", icon: Plane, desc: "Intercity route conditions" },
 ];
 
 const TRANSPORT_MODES = [
@@ -249,60 +244,32 @@ export const WeatherMissionMode: React.FC<WeatherMissionModeProps> = ({
             </button>
           </div>
 
-          {/* 2-Column: "WHAT SHOULD I CARRY?" vs "WHAT SHOULD I NOT CARRY?" */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* 1. SMART CARRY ADVISOR */}
-            <div className="p-5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30">
-              <div className="flex items-center gap-2 mb-3">
+          {/* Smart Carry Advisor */}
+          <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                 <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">
-                  What You Should Carry
+                  Recommended Items to Carry
                 </h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
-                  Recommended
-                </span>
               </div>
-              <p className="text-xs text-slate-400 mb-3">
-                Items matched precisely to today's moisture, temperature, and duration:
-              </p>
-              <div className="space-y-2.5">
-                {missionResult.carry.map((item, idx) => (
-                  <div key={idx} className="p-3 rounded-xl bg-slate-900/80 border border-emerald-500/20 flex items-start gap-2.5">
-                    <span className="text-emerald-400 text-sm font-bold mt-0.5">✅</span>
-                    <div>
-                      <div className="text-xs font-bold text-slate-100">{item.item}</div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">{item.reason}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                Weather Matched
+              </span>
             </div>
-
-            {/* 2. REVERSE PACKING AI ("WHAT SHOULD I NOT CARRY?") */}
-            <div className="p-5 rounded-2xl bg-rose-950/20 border border-rose-500/30">
-              <div className="flex items-center gap-2 mb-3">
-                <XCircle className="w-5 h-5 text-rose-400" />
-                <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">
-                  Reverse Packing: Don't Carry / Avoid
-                </h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold">
-                  Anti-Hassle AI
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mb-3">
-                Items that add dead weight, risk damage, or are completely unnecessary today:
-              </p>
-              <div className="space-y-2.5">
-                {missionResult.dontCarry.map((item, idx) => (
-                  <div key={idx} className="p-3 rounded-xl bg-slate-900/80 border border-rose-500/20 flex items-start gap-2.5">
-                    <span className="text-rose-400 text-sm font-bold mt-0.5">🚫</span>
-                    <div>
-                      <div className="text-xs font-bold text-slate-100">{item.item}</div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">{item.reason}</div>
-                    </div>
+            <p className="text-xs text-slate-400 mb-3">
+              Essential items based on current moisture, temperature, and your planned activity:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {missionResult.carry.map((item, idx) => (
+                <div key={idx} className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-start gap-2.5 hover:border-emerald-500/40 transition">
+                  <span className="text-emerald-400 text-sm font-bold mt-0.5">✅</span>
+                  <div>
+                    <div className="text-xs font-bold text-slate-100">{item.item}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">{item.reason}</div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           </div>
 
