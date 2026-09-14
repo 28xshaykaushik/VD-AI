@@ -61,18 +61,162 @@ function getWeatherInfo(code: number) {
   return WMO_CODES[code] || { label: "Variable conditions", icon: "cloud", hazard: "Normal awareness" };
 }
 
-// Top world/Indian default cities for instant fast loading
+// Comprehensive Hindi and regional aliases to standard keys
+const HINDI_CITY_MAP: Record<string, string> = {
+  "दिल्ली": "delhi", "नई दिल्ली": "delhi", "delhi": "delhi", "new delhi": "delhi",
+  "जयपुर": "jaipur", "jaipur": "jaipur",
+  "मुंबई": "mumbai", "बंबई": "mumbai", "mumbai": "mumbai", "bombay": "mumbai",
+  "पुणे": "pune", "pune": "pune",
+  "कोलकाता": "kolkata", "कलकत्ता": "kolkata", "kolkata": "kolkata", "calcutta": "kolkata",
+  "चेन्नई": "chennai", "मद्रास": "chennai", "chennai": "chennai", "madras": "chennai",
+  "बेंगलुरु": "bengaluru", "बैंगलोर": "bengaluru", "bengaluru": "bengaluru", "bangalore": "bengaluru",
+  "हैदराबाद": "hyderabad", "hyderabad": "hyderabad",
+  "अहमदाबाद": "ahmedabad", "ahmedabad": "ahmedabad",
+  "सूरत": "surat", "surat": "surat",
+  "लखनऊ": "lucknow", "lucknow": "lucknow",
+  "कानपुर": "kanpur", "kanpur": "kanpur",
+  "नागपुर": "nagpur", "nagpur": "nagpur",
+  "इंदौर": "indore", "indore": "indore",
+  "भोपाल": "bhopal", "bhopal": "bhopal",
+  "पटना": "patna", "patna": "patna",
+  "वडोदरा": "vadodara", "vadodara": "vadodara", "baroda": "vadodara",
+  "गाजियाबाद": "ghaziabad", "ghaziabad": "ghaziabad",
+  "लुधियाना": "ludhiana", "ludhiana": "ludhiana",
+  "आगरा": "agra", "agra": "agra",
+  "नासिक": "nashik", "nashik": "nashik",
+  "फरीदाबाद": "faridabad", "faridabad": "faridabad",
+  "मेरठ": "meerut", "meerut": "meerut",
+  "राजकोट": "rajkot", "rajkot": "rajkot",
+  "वाराणसी": "varanasi", "बनारस": "varanasi", "काशी": "varanasi", "varanasi": "varanasi", "banaras": "varanasi",
+  "श्रीनगर": "srinagar", "srinagar": "srinagar",
+  "औरंगाबाद": "aurangabad", "aurangabad": "aurangabad", "chhatrapati sambhajinagar": "aurangabad",
+  "धनबाद": "dhanbad", "dhanbad": "dhanbad",
+  "अमृतसर": "amritsar", "amritsar": "amritsar",
+  "प्रयागराज": "prayagraj", "इलाहाबाद": "prayagraj", "prayagraj": "prayagraj", "allahabad": "prayagraj",
+  "रांची": "ranchi", "ranchi": "ranchi",
+  "हावड़ा": "howrah", "howrah": "howrah",
+  "कोयंबटूर": "coimbatore", "coimbatore": "coimbatore",
+  "जबलपुर": "jabalpur", "jabalpur": "jabalpur",
+  "ग्वालियर": "gwalior", "gwalior": "gwalior",
+  "विजयवाड़ा": "vijayawada", "vijayawada": "vijayawada",
+  "जोधपुर": "jodhpur", "jodhpur": "jodhpur",
+  "मदुरै": "madurai", "madurai": "madurai",
+  "रायपुर": "raipur", "raipur": "raipur",
+  "कोटा": "kota", "kota": "kota",
+  "चंडीगढ़": "chandigarh", "chandigarh": "chandigarh",
+  "गुवाहाटी": "guwahati", "guwahati": "guwahati",
+  "शिमला": "shimla", "shimla": "shimla",
+  "मनाली": "manali", "manali": "manali",
+  "लेह": "leh", "लद्दाख": "leh", "leh": "leh", "ladakh": "leh",
+  "धर्मशाला": "dharamshala", "dharamshala": "dharamshala",
+  "ऋषिकेश": "rishikesh", "rishikesh": "rishikesh",
+  "हरिद्वार": "haridwar", "haridwar": "haridwar",
+  "नैनीताल": "nainital", "nainital": "nainital",
+  "मसूरी": "mussoorie", "mussoorie": "mussoorie",
+  "गंगटोक": "gangtok", "gangtok": "gangtok",
+  "दार्जिलिंग": "darjeeling", "darjeeling": "darjeeling",
+  "शिलांग": "shillong", "shillong": "shillong",
+  "गोवा": "goa", "पणजी": "goa", "goa": "goa", "panaji": "goa",
+  "कोच्चि": "kochi", "kochi": "kochi", "cochin": "kochi",
+  "तिरुवनंतपुरम": "thiruvananthapuram", "त्रिवेंद्रम": "thiruvananthapuram", "thiruvananthapuram": "thiruvananthapuram", "trivandrum": "thiruvananthapuram",
+  "देहरादून": "dehradun", "dehradun": "dehradun",
+  "नोएडा": "noida", "noida": "noida",
+  "ग्रेटर नोएडा": "greaternoida", "greater noida": "greaternoida",
+  "गुरुग्राम": "gurugram", "गुड़गांव": "gurugram", "gurugram": "gurugram", "gurgaon": "gurugram",
+  "उदयपुर": "udaipur", "udaipur": "udaipur",
+  "अयोध्या": "ayodhya", "ayodhya": "ayodhya",
+  "मथुरा": "mathura", "mathura": "mathura",
+  "वृंदावन": "vrindavan", "vrindavan": "vrindavan",
+  "उज्जैन": "ujjain", "ujjain": "ujjain",
+  "लंदन": "london", "london": "london",
+  "न्यूयॉर्क": "newyork", "new york": "newyork", "nyc": "newyork",
+  "टोक्यो": "tokyo", "tokyo": "tokyo",
+  "पेरिस": "paris", "paris": "paris",
+  "दुबई": "dubai", "dubai": "dubai",
+  "सिंगापुर": "singapore", "singapore": "singapore",
+  "काठमांडू": "kathmandu", "kathmandu": "kathmandu",
+};
+
+// Comprehensive Top Indian & Global cities database with accurate coordinates & elevations
 const POPULAR_LOCATIONS: Record<string, { lat: number; lon: number; name: string; country: string; admin: string; isMountainous?: boolean }> = {
+  // Metro & Major Indian Cities
   delhi: { lat: 28.6139, lon: 77.2090, name: "New Delhi", country: "India", admin: "Delhi" },
   mumbai: { lat: 19.0760, lon: 72.8777, name: "Mumbai", country: "India", admin: "Maharashtra" },
   bengaluru: { lat: 12.9716, lon: 77.5946, name: "Bengaluru", country: "India", admin: "Karnataka" },
+  kolkata: { lat: 22.5726, lon: 88.3639, name: "Kolkata", country: "India", admin: "West Bengal" },
+  chennai: { lat: 13.0827, lon: 80.2707, name: "Chennai", country: "India", admin: "Tamil Nadu" },
+  hyderabad: { lat: 17.3850, lon: 78.4867, name: "Hyderabad", country: "India", admin: "Telangana" },
+  ahmedabad: { lat: 23.0225, lon: 72.5714, name: "Ahmedabad", country: "India", admin: "Gujarat" },
+  pune: { lat: 18.5204, lon: 73.8567, name: "Pune", country: "India", admin: "Maharashtra" },
+  surat: { lat: 21.1702, lon: 72.8311, name: "Surat", country: "India", admin: "Gujarat" },
+  jaipur: { lat: 26.9124, lon: 75.7873, name: "Jaipur", country: "India", admin: "Rajasthan" },
+  lucknow: { lat: 26.8467, lon: 80.9462, name: "Lucknow", country: "India", admin: "Uttar Pradesh" },
+  kanpur: { lat: 26.4499, lon: 80.3319, name: "Kanpur", country: "India", admin: "Uttar Pradesh" },
+  nagpur: { lat: 21.1458, lon: 79.0882, name: "Nagpur", country: "India", admin: "Maharashtra" },
+  indore: { lat: 22.7196, lon: 75.8577, name: "Indore", country: "India", admin: "Madhya Pradesh" },
+  bhopal: { lat: 23.2599, lon: 77.4126, name: "Bhopal", country: "India", admin: "Madhya Pradesh" },
+  patna: { lat: 25.5941, lon: 85.1376, name: "Patna", country: "India", admin: "Bihar" },
+  vadodara: { lat: 22.3072, lon: 73.1812, name: "Vadodara", country: "India", admin: "Gujarat" },
+  ghaziabad: { lat: 28.6692, lon: 77.4538, name: "Ghaziabad", country: "India", admin: "Uttar Pradesh" },
+  ludhiana: { lat: 30.9010, lon: 75.8573, name: "Ludhiana", country: "India", admin: "Punjab" },
+  agra: { lat: 27.1767, lon: 78.0081, name: "Agra", country: "India", admin: "Uttar Pradesh" },
+  nashik: { lat: 19.9975, lon: 73.7898, name: "Nashik", country: "India", admin: "Maharashtra" },
+  faridabad: { lat: 28.4089, lon: 77.3178, name: "Faridabad", country: "India", admin: "Haryana" },
+  meerut: { lat: 28.9845, lon: 77.7064, name: "Meerut", country: "India", admin: "Uttar Pradesh" },
+  rajkot: { lat: 22.3039, lon: 70.8022, name: "Rajkot", country: "India", admin: "Gujarat" },
+  varanasi: { lat: 25.3176, lon: 82.9739, name: "Varanasi", country: "India", admin: "Uttar Pradesh" },
+  amritsar: { lat: 31.6340, lon: 74.8723, name: "Amritsar", country: "India", admin: "Punjab" },
+  prayagraj: { lat: 25.4358, lon: 81.8463, name: "Prayagraj", country: "India", admin: "Uttar Pradesh" },
+  ranchi: { lat: 23.3441, lon: 85.3096, name: "Ranchi", country: "India", admin: "Jharkhand" },
+  howrah: { lat: 22.5958, lon: 88.2636, name: "Howrah", country: "India", admin: "West Bengal" },
+  coimbatore: { lat: 11.0168, lon: 76.9558, name: "Coimbatore", country: "India", admin: "Tamil Nadu" },
+  jabalpur: { lat: 23.1815, lon: 79.9864, name: "Jabalpur", country: "India", admin: "Madhya Pradesh" },
+  gwalior: { lat: 26.2183, lon: 78.1828, name: "Gwalior", country: "India", admin: "Madhya Pradesh" },
+  vijayawada: { lat: 16.5062, lon: 80.6480, name: "Vijayawada", country: "India", admin: "Andhra Pradesh" },
+  jodhpur: { lat: 26.2389, lon: 73.0243, name: "Jodhpur", country: "India", admin: "Rajasthan" },
+  madurai: { lat: 9.9252, lon: 78.1198, name: "Madurai", country: "India", admin: "Tamil Nadu" },
+  raipur: { lat: 21.2514, lon: 81.6296, name: "Raipur", country: "India", admin: "Chhattisgarh" },
+  kota: { lat: 25.2138, lon: 75.8648, name: "Kota", country: "India", admin: "Rajasthan" },
+  chandigarh: { lat: 30.7333, lon: 76.7794, name: "Chandigarh", country: "India", admin: "Punjab" },
+  guwahati: { lat: 26.1445, lon: 91.7362, name: "Guwahati", country: "India", admin: "Assam" },
+  goa: { lat: 15.2993, lon: 74.1240, name: "Goa (Panaji)", country: "India", admin: "Goa" },
+  kochi: { lat: 9.9312, lon: 76.2673, name: "Kochi", country: "India", admin: "Kerala" },
+  thiruvananthapuram: { lat: 8.5241, lon: 76.9366, name: "Thiruvananthapuram", country: "India", admin: "Kerala" },
+  dehradun: { lat: 30.3165, lon: 78.0322, name: "Dehradun", country: "India", admin: "Uttarakhand" },
+  noida: { lat: 28.5355, lon: 77.3910, name: "Noida", country: "India", admin: "Uttar Pradesh" },
+  greaternoida: { lat: 28.4744, lon: 77.5040, name: "Greater Noida", country: "India", admin: "Uttar Pradesh" },
+  gurugram: { lat: 28.4595, lon: 77.0266, name: "Gurugram", country: "India", admin: "Haryana" },
+  udaipur: { lat: 24.5854, lon: 73.7125, name: "Udaipur", country: "India", admin: "Rajasthan" },
+  ayodhya: { lat: 26.7922, lon: 82.1998, name: "Ayodhya", country: "India", admin: "Uttar Pradesh" },
+  mathura: { lat: 27.4924, lon: 77.6737, name: "Mathura", country: "India", admin: "Uttar Pradesh" },
+  vrindavan: { lat: 27.5806, lon: 77.7006, name: "Vrindavan", country: "India", admin: "Uttar Pradesh" },
+  bhubaneswar: { lat: 20.2961, lon: 85.8245, name: "Bhubaneswar", country: "India", admin: "Odisha" },
+  haridwar: { lat: 29.9457, lon: 78.1642, name: "Haridwar", country: "India", admin: "Uttarakhand" },
+  rishikesh: { lat: 30.0869, lon: 78.2676, name: "Rishikesh", country: "India", admin: "Uttarakhand" },
+  ujjain: { lat: 23.1765, lon: 75.7885, name: "Ujjain", country: "India", admin: "Madhya Pradesh" },
+
+  // Mountain / Hill Station Destinations (High altitude slope zones)
   shimla: { lat: 31.1048, lon: 77.1734, name: "Shimla", country: "India", admin: "Himachal Pradesh", isMountainous: true },
   manali: { lat: 32.2432, lon: 77.1892, name: "Manali", country: "India", admin: "Himachal Pradesh", isMountainous: true },
   gangtok: { lat: 27.3389, lon: 88.6065, name: "Gangtok", country: "India", admin: "Sikkim", isMountainous: true },
-  chandigarh: { lat: 30.7333, lon: 76.7794, name: "Chandigarh", country: "India", admin: "Punjab" },
+  leh: { lat: 34.1526, lon: 77.5771, name: "Leh", country: "India", admin: "Ladakh", isMountainous: true },
+  srinagar: { lat: 34.0837, lon: 74.7973, name: "Srinagar", country: "India", admin: "Jammu and Kashmir", isMountainous: true },
+  dharamshala: { lat: 32.2190, lon: 76.3234, name: "Dharamshala", country: "India", admin: "Himachal Pradesh", isMountainous: true },
+  nainital: { lat: 29.3919, lon: 79.4542, name: "Nainital", country: "India", admin: "Uttarakhand", isMountainous: true },
+  mussoorie: { lat: 30.4598, lon: 78.0644, name: "Mussoorie", country: "India", admin: "Uttarakhand", isMountainous: true },
+  darjeeling: { lat: 27.0410, lon: 88.2663, name: "Darjeeling", country: "India", admin: "West Bengal", isMountainous: true },
+  shillong: { lat: 25.5788, lon: 91.8933, name: "Shillong", country: "India", admin: "Meghalaya", isMountainous: true },
+  kullu: { lat: 31.9579, lon: 77.1095, name: "Kullu", country: "India", admin: "Himachal Pradesh", isMountainous: true },
+  kashmir: { lat: 34.0837, lon: 74.7973, name: "Kashmir Valley", country: "India", admin: "Jammu and Kashmir", isMountainous: true },
+
+  // Global Hubs
   london: { lat: 51.5074, lon: -0.1278, name: "London", country: "United Kingdom", admin: "England" },
   newyork: { lat: 40.7128, lon: -74.0060, name: "New York", country: "United States", admin: "New York" },
   tokyo: { lat: 35.6762, lon: 139.6503, name: "Tokyo", country: "Japan", admin: "Tokyo" },
+  paris: { lat: 48.8566, lon: 2.3522, name: "Paris", country: "France", admin: "Île-de-France" },
+  dubai: { lat: 25.2048, lon: 55.2708, name: "Dubai", country: "United Arab Emirates", admin: "Dubai" },
+  singapore: { lat: 1.3521, lon: 103.8198, name: "Singapore", country: "Singapore", admin: "Singapore" },
+  kathmandu: { lat: 27.7172, lon: 85.3240, name: "Kathmandu", country: "Nepal", admin: "Bagmati", isMountainous: true },
 };
 
 // Calculate Semantic Weather DNA (0 - 10 scores)
@@ -199,17 +343,31 @@ function computeModelEnsemble(rainProb: number, temp: number) {
 // ----------------------------------------------------
 app.get("/api/weather", async (req: Request, res: Response) => {
   try {
-    const cityQuery = ((req.query.city as string) || "Delhi").trim();
+    const rawCity = ((req.query.city as string) || "Delhi").trim();
     let lat = parseFloat(req.query.lat as string);
     let lon = parseFloat(req.query.lon as string);
-    let resolvedName = cityQuery;
+    let resolvedName = rawCity;
     let country = "India";
     let admin = "";
     let isHilly = false;
 
-    // Fast check for known location
-    const normalizedKey = cityQuery.toLowerCase().replace(/[^a-z]/g, "");
-    if (POPULAR_LOCATIONS[normalizedKey] && (!lat || isNaN(lat))) {
+    // 1. Clean query from conversational and search filler words
+    let cleanCity = rawCity
+      .replace(/^(weather in|weather of|temperature of|temp in|weather|mausam|ka mausam|ki barish|aaj ka|live|search)\s+/i, "")
+      .replace(/\s+(weather|temperature|temp|mausam|ka mausam|city|district|state|today|aaj|live)$/i, "")
+      .trim();
+
+    if (!cleanCity) cleanCity = rawCity;
+
+    // 2. Check Hindi & regional translation map
+    const hindiResolved = HINDI_CITY_MAP[cleanCity.toLowerCase()] || HINDI_CITY_MAP[rawCity.toLowerCase()];
+    if (hindiResolved) {
+      cleanCity = hindiResolved;
+    }
+
+    // 3. Fast check for known location in POPULAR_LOCATIONS
+    const normalizedKey = cleanCity.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if ((!lat || isNaN(lat)) && POPULAR_LOCATIONS[normalizedKey]) {
       const match = POPULAR_LOCATIONS[normalizedKey];
       lat = match.lat;
       lon = match.lon;
@@ -217,16 +375,30 @@ app.get("/api/weather", async (req: Request, res: Response) => {
       country = match.country;
       admin = match.admin;
       isHilly = !!match.isMountainous;
+    } else if (!lat || isNaN(lat)) {
+      // Check partial match across popular locations
+      for (const [key, loc] of Object.entries(POPULAR_LOCATIONS)) {
+        if (key.includes(normalizedKey) || normalizedKey.includes(key)) {
+          lat = loc.lat;
+          lon = loc.lon;
+          resolvedName = loc.name;
+          country = loc.country;
+          admin = loc.admin;
+          isHilly = !!loc.isMountainous;
+          break;
+        }
+      }
     }
 
-    // Geocode if lat/lon not provided
+    // 4. Geocode if lat/lon not provided or matched
     if (!lat || isNaN(lat) || !lon || isNaN(lon)) {
       try {
-        const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityQuery)}&count=1&language=en&format=json`;
+        const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cleanCity)}&count=5&language=en&format=json`;
         const geoResp = await fetch(geoUrl);
         const geoData = await geoResp.json();
         if (geoData?.results && geoData.results.length > 0) {
-          const top = geoData.results[0];
+          // Sort by population to get primary municipal city instead of obscure hamlet
+          const top = geoData.results.sort((a: any, b: any) => (b.population || 0) - (a.population || 0))[0];
           lat = top.latitude;
           lon = top.longitude;
           resolvedName = top.name;
@@ -236,16 +408,36 @@ app.get("/api/weather", async (req: Request, res: Response) => {
             isHilly = true;
           }
         } else {
-          // Fallback to Delhi
-          lat = 28.6139;
-          lon = 77.2090;
-          resolvedName = cityQuery;
-          country = "India";
+          // Check if any individual word matches a popular location
+          const words = cleanCity.toLowerCase().split(/[\s,]+/);
+          let foundLoc = null;
+          for (const w of words) {
+            const ck = w.replace(/[^a-z0-9]/g, "");
+            if (POPULAR_LOCATIONS[ck]) {
+              foundLoc = POPULAR_LOCATIONS[ck];
+              break;
+            }
+          }
+          if (foundLoc) {
+            lat = foundLoc.lat;
+            lon = foundLoc.lon;
+            resolvedName = foundLoc.name;
+            country = foundLoc.country;
+            admin = foundLoc.admin;
+            isHilly = !!foundLoc.isMountainous;
+          } else {
+            // Sensible fallback based on common query patterns
+            lat = 28.6139;
+            lon = 77.2090;
+            resolvedName = cleanCity || "New Delhi";
+            country = "India";
+            admin = "Delhi";
+          }
         }
       } catch (err) {
         lat = 28.6139;
         lon = 77.2090;
-        resolvedName = cityQuery;
+        resolvedName = cleanCity || "New Delhi";
       }
     }
 
@@ -259,7 +451,8 @@ app.get("/api/weather", async (req: Request, res: Response) => {
     const hourly = weatherJson.hourly || {};
     const daily = weatherJson.daily || {};
 
-    const temp = Math.round(current.temperature_2m ?? 28);
+    const rawTemp = current.temperature_2m;
+    const temp = rawTemp !== undefined && rawTemp !== null ? Math.round(rawTemp) : 24;
     const feelsLike = Math.round(current.apparent_temperature ?? temp);
     const humidity = Math.round(current.relative_humidity_2m ?? 60);
     const windSpeed = Math.round(current.wind_speed_10m ?? 12);
@@ -512,15 +705,22 @@ app.get("/api/weather", async (req: Request, res: Response) => {
 // ----------------------------------------------------
 app.get("/api/cities", async (req: Request, res: Response) => {
   try {
-    const query = ((req.query.q as string) || "").trim();
-    if (!query || query.length < 2) {
+    const rawQuery = ((req.query.q as string) || "").trim();
+    if (!rawQuery || rawQuery.length < 2) {
       return res.json({ results: [] });
     }
 
+    const hindiResolvedKey = HINDI_CITY_MAP[rawQuery.toLowerCase()];
+    const queryForSearch = hindiResolvedKey || rawQuery;
+    const normalizedQ = queryForSearch.toLowerCase().replace(/[^a-z0-9]/g, "");
+
     // First, check matching local popular locations for instant sub-millisecond response
-    const normalizedQ = query.toLowerCase();
     const localMatches = Object.values(POPULAR_LOCATIONS)
-      .filter((loc) => loc.name.toLowerCase().includes(normalizedQ) || loc.admin.toLowerCase().includes(normalizedQ))
+      .filter((loc) => {
+        const nameNorm = loc.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const adminNorm = loc.admin.toLowerCase().replace(/[^a-z0-9]/g, "");
+        return nameNorm.includes(normalizedQ) || adminNorm.includes(normalizedQ) || normalizedQ.includes(nameNorm);
+      })
       .map((loc) => ({
         name: loc.name,
         admin1: loc.admin,
@@ -531,7 +731,7 @@ app.get("/api/cities", async (req: Request, res: Response) => {
 
     // Next, query Open-Meteo Geocoding API for global results
     try {
-      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=7&language=en&format=json`;
+      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(queryForSearch)}&count=7&language=en&format=json`;
       const geoResp = await fetch(geoUrl);
       const geoData = await geoResp.json();
       
@@ -555,9 +755,9 @@ app.get("/api/cities", async (req: Request, res: Response) => {
         }
       }
 
-      res.json({ results: combined.slice(0, 7) });
+      res.json({ results: combined.slice(0, 8) });
     } catch {
-      res.json({ results: localMatches });
+      res.json({ results: localMatches.slice(0, 8) });
     }
   } catch (err: any) {
     console.error("Error in /api/cities:", err);
@@ -784,7 +984,10 @@ async function fetchLiveWeatherSummary(cityName: string): Promise<any | null> {
     let admin = "";
     let isHilly = false;
 
-    const normalizedKey = clean.toLowerCase().replace(/[^a-z]/g, "");
+    const hindiKey = HINDI_CITY_MAP[clean.toLowerCase()];
+    const queryKey = hindiKey || clean;
+    const normalizedKey = queryKey.toLowerCase().replace(/[^a-z0-9]/g, "");
+
     if (POPULAR_LOCATIONS[normalizedKey]) {
       const match = POPULAR_LOCATIONS[normalizedKey];
       lat = match.lat;
@@ -794,11 +997,11 @@ async function fetchLiveWeatherSummary(cityName: string): Promise<any | null> {
       admin = match.admin;
       isHilly = !!match.isMountainous;
     } else {
-      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(clean)}&count=1&language=en&format=json`;
+      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(queryKey)}&count=5&language=en&format=json`;
       const geoResp = await fetch(geoUrl);
       const geoData = await geoResp.json();
       if (geoData?.results && geoData.results.length > 0) {
-        const top = geoData.results[0];
+        const top = geoData.results.sort((a: any, b: any) => (b.population || 0) - (a.population || 0))[0];
         lat = top.latitude;
         lon = top.longitude;
         resolvedName = top.name;
@@ -819,7 +1022,8 @@ async function fetchLiveWeatherSummary(cityName: string): Promise<any | null> {
     const weatherCode = current.weather_code ?? 0;
     const weatherInfo = getWeatherInfo(weatherCode);
 
-    const temp = Math.round(current.temperature_2m ?? 25);
+    const rawTemp = current.temperature_2m;
+    const temp = rawTemp !== undefined && rawTemp !== null ? Math.round(rawTemp) : 24;
     const feelsLike = Math.round(current.apparent_temperature ?? temp);
     const humidity = Math.round(current.relative_humidity_2m ?? 50);
     const windSpeed = Math.round(current.wind_speed_10m ?? 10);
@@ -1137,13 +1341,17 @@ app.post("/api/route-risk", async (req: Request, res: Response) => {
     const to = (destination || "Chandigarh").trim();
 
     // Generate Route A (Direct / Primary) vs Route B (Weather-Optimized Alternative)
-    const isHillRoute = /shimla|manali|kufri|gangtok|leh|kullu|mussoorie/i.test(from + to);
+    const isHillRoute = /shimla|manali|kufri|gangtok|leh|kullu|mussoorie|nainital|darjeeling/i.test(from + to);
+    const startTemp = isHillRoute ? 26 : 32;
+    const destTemp = isHillRoute ? 16 : 30;
+    const mid1Temp = Math.round((startTemp * 2 + destTemp) / 3);
+    const mid2Temp = Math.round((startTemp + destTemp * 2) / 3);
 
     const corridorHops = [
-      { name: from, km: 0, weather: "Partly Cloudy", temp: 31, rainRisk: 20, roadRisk: "LOW" },
-      { name: "Midpoint Waypoint 1", km: 65, weather: "Scattered Rain", temp: 29, rainRisk: 55, roadRisk: "MODERATE" },
-      { name: "Midpoint Waypoint 2", km: 140, weather: "Overcast", temp: 28, rainRisk: 40, roadRisk: "LOW" },
-      { name: to, km: 220, weather: isHillRoute ? "Heavy Fog & Showers" : "Passing Showers", temp: isHillRoute ? 17 : 29, rainRisk: isHillRoute ? 75 : 30, roadRisk: isHillRoute ? "HIGH" : "LOW" },
+      { name: from, km: 0, weather: "Partly Cloudy", temp: startTemp, rainRisk: 20, roadRisk: "LOW" },
+      { name: "Transit Corridor (Km 65)", km: 65, weather: "Scattered Clouds", temp: mid1Temp, rainRisk: 40, roadRisk: "LOW" },
+      { name: "Midway Waypoint (Km 140)", km: 140, weather: isHillRoute ? "Mountain Mist" : "Passing Showers", temp: mid2Temp, rainRisk: isHillRoute ? 60 : 35, roadRisk: isHillRoute ? "MODERATE" : "LOW" },
+      { name: to, km: 220, weather: isHillRoute ? "Cool Hill Showers" : "Fair Conditions", temp: destTemp, rainRisk: isHillRoute ? 75 : 25, roadRisk: isHillRoute ? "HIGH" : "LOW" },
     ];
 
     const routeA = {

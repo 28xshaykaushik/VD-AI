@@ -14,7 +14,7 @@ interface CitySuggestion {
 interface HeaderProps {
   currentCity: string;
   currentCondition?: string;
-  onSearch: (city: string) => void;
+  onSearch: (city: string, lat?: number, lon?: number) => void;
   onLocateMe: () => void;
   selectedLanguage: string;
   onLanguageChange: (lang: string) => void;
@@ -139,16 +139,23 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  const handleSelectCity = (cityName: string) => {
+  const handleSelectCity = (city: CitySuggestion) => {
     setSearchInput("");
     setShowDropdown(false);
-    onSearch(cityName);
+    onSearch(city.name, city.latitude, city.longitude);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchInput.trim()) {
-      onSearch(searchInput.trim());
+    const clean = searchInput.trim();
+    if (clean) {
+      if (suggestions.length > 0) {
+        // If there's a matching suggestion, use its coordinates
+        const top = suggestions[0];
+        onSearch(top.name, top.latitude, top.longitude);
+      } else {
+        onSearch(clean);
+      }
       setSearchInput("");
       setShowDropdown(false);
     }
@@ -255,7 +262,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     key={`${item.name}-${item.admin1}-${idx}`}
                     type="button"
-                    onClick={() => handleSelectCity(item.name)}
+                    onClick={() => handleSelectCity(item)}
                     className="w-full px-3.5 py-2.5 text-left hover:bg-slate-800/80 flex items-center justify-between transition group"
                   >
                     <div className="flex items-center gap-2.5">

@@ -17,6 +17,21 @@ import { DailyAudioBulletin } from "./components/DailyAudioBulletin";
 import { LanguageSelectorModal } from "./components/LanguageSelectorModal";
 import { getUITranslation } from "./utils/languages";
 
+const QUICK_CITIES = [
+  { name: "Delhi", label: "Delhi" },
+  { name: "Mumbai", label: "Mumbai" },
+  { name: "Bengaluru", label: "Bengaluru" },
+  { name: "Jaipur", label: "Jaipur" },
+  { name: "Shimla", label: "Shimla 🏔️", lat: 31.1048, lon: 77.1734 },
+  { name: "Manali", label: "Manali ❄️", lat: 32.2432, lon: 77.1892 },
+  { name: "Srinagar", label: "Srinagar 🏔️", lat: 34.0837, lon: 74.7973 },
+  { name: "Kolkata", label: "Kolkata" },
+  { name: "Chennai", label: "Chennai" },
+  { name: "Goa", label: "Goa 🏖️" },
+  { name: "London", label: "London 🇬🇧", lat: 51.5074, lon: -0.1278 },
+  { name: "Tokyo", label: "Tokyo 🇯🇵", lat: 35.6762, lon: 139.6503 },
+];
+
 export default function App() {
   const [currentCity, setCurrentCity] = useState<string>("Delhi");
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
@@ -91,9 +106,9 @@ export default function App() {
     );
   };
 
-  const handleCitySearch = (newCity: string) => {
+  const handleCitySearch = (newCity: string, lat?: number, lon?: number) => {
     setCurrentCity(newCity);
-    fetchWeather(newCity);
+    fetchWeather(newCity, lat, lon);
   };
 
   return (
@@ -131,6 +146,32 @@ export default function App() {
           </div>
         ) : weatherData ? (
           <>
+            {/* Quick City Shortcuts Bar */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 text-xs">
+              <span className="text-slate-400 font-bold shrink-0 text-[11px] uppercase tracking-wider flex items-center gap-1 mr-1">
+                <MapPin className="w-3.5 h-3.5 text-cyan-400" />
+                Quick:
+              </span>
+              {QUICK_CITIES.map((c) => {
+                const isSelected = (weatherData?.location?.name || currentCity)
+                  .toLowerCase()
+                  .includes(c.name.toLowerCase());
+                return (
+                  <button
+                    key={c.name}
+                    onClick={() => handleCitySearch(c.name, c.lat, c.lon)}
+                    className={`px-3 py-1.5 rounded-xl shrink-0 text-xs font-semibold transition-all ${
+                      isSelected
+                        ? "bg-cyan-500 text-slate-950 font-black shadow-sm shadow-cyan-500/30 ring-1 ring-cyan-300"
+                        : "bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800"
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                );
+              })}
+            </div>
+
             {/* Top Weather Hero Card */}
             <HeroWeatherCard
               weather={weatherData}
